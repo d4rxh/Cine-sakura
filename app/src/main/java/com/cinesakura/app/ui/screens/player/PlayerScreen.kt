@@ -2,18 +2,28 @@ package com.cinesakura.app.ui.screens.player
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -23,15 +33,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.cinesakura.app.CineSakuraApp
 import com.cinesakura.app.domain.model.StreamServer
 import com.cinesakura.app.domain.model.WatchHistoryItem
 import com.cinesakura.app.ui.theme.*
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+
+fun Context.findActivity(): Activity? {
+    var currentContext = this
+    while (currentContext is ContextWrapper) {
+        if (currentContext is Activity) return currentContext
+        currentContext = currentContext.baseContext
+    }
+    return null
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,8 +69,9 @@ fun PlayerScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
-    val scope = rememberCoroutineScope()
+    val activity = remember(context) { context.findActivity() }
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val movieRepo = remember { CineSakuraApp.instance.movieRepository }
     val watchlistRepo = remember { CineSakuraApp.instance.watchlistRepository }
@@ -56,11 +81,40 @@ fun PlayerScreen(
     }
 
     var selectedServer by remember { mutableStateOf(servers.firstOrNull()) }
-    var isLandscape by remember { mutableStateOf(false) }
     var customView by remember { mutableStateOf<View?>(null) }
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
+    var showControlsOverlay by remember { mutableStateOf(true) }
 
-    // Record to watch history
+    // Auto-hide controls overlay in landscape mode after 4 seconds
+    LaunchedEffect(showControlsOverlay, isLandscape) {
+        if (isLandscape && showControlsOverlay) {
+            delay(4000)
+            showControlsOverlay = false
+        }
+    }
+
+    // Manage system bars for immersive fullscreen in landscape
+    DisposableEffect(isLandscape, customView != null) {
+        val window = activity?.window
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            if (isLandscape || customView != null) {
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose {
+            val win = activity?.window
+            if (win != null) {
+                val controller = WindowCompat.getInsetsController(win, win.decorView)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    // Save to Watch History
     LaunchedEffect(imdbId) {
         watchlistRepo.recordHistory(
             WatchHistoryItem(
@@ -75,13 +129,14 @@ fun PlayerScreen(
         )
     }
 
-    // Handle back button for fullscreen video view
+    // Handle back button
     BackHandler {
         if (customView != null) {
             customViewCallback?.onCustomViewHidden()
             customView = null
+        } else if (isLandscape) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else {
-            // Restore portrait on exit
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             onNavigateBack()
         }
@@ -90,66 +145,27 @@ fun PlayerScreen(
     val toggleOrientation = {
         if (isLandscape) {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            isLandscape = false
         } else {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            isLandscape = true
         }
     }
 
-    Scaffold(
-        topBar = {
-            if (customView == null && !isLandscape) {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
-                                maxLines = 1
-                            )
-                            if (isTv) {
-                                Text(
-                                    text = "Season $season • Episode $episode",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = SakuraLight
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                            onNavigateBack()
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = toggleOrientation) {
-                            Icon(Icons.Default.ScreenRotation, contentDescription = "Rotate", tint = TextPrimary)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
-                )
-            }
-        },
-        containerColor = Color.Black
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            // Video Player Container
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        if (isLandscape) {
+            // Fullscreen Landscape Video Player
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(if (isLandscape) 1f else 0.55f)
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        showControlsOverlay = !showControlsOverlay
+                    }
             ) {
                 if (selectedServer != null) {
                     AndroidView(
@@ -159,44 +175,10 @@ fun PlayerScreen(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.MATCH_PARENT
                                 )
-
-                                settings.apply {
-                                    javaScriptEnabled = true
-                                    domStorageEnabled = true
-                                    mediaPlaybackRequiresUserGesture = false
-                                    loadWithOverviewMode = true
-                                    useWideViewPort = true
-                                    allowFileAccess = true
-                                    databaseEnabled = true
-                                    userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                                configureVideoWebView(this, selectedServer!!.embedUrl) { v, cb ->
+                                    customView = v
+                                    customViewCallback = cb
                                 }
-
-                                webChromeClient = object : WebChromeClient() {
-                                    override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
-                                        customView = view
-                                        customViewCallback = callback
-                                    }
-
-                                    override fun onHideCustomView() {
-                                        customView = null
-                                        customViewCallback = null
-                                    }
-                                }
-
-                                webViewClient = object : WebViewClient() {
-                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                        val url = request?.url?.toString() ?: return false
-                                        // Block popup ads or suspicious redirects away from embed players
-                                        val allowedHosts = listOf(
-                                            "vidlink.pro", "vidsrc.me", "vidsrc.pm", "vidsrc.xyz",
-                                            "2embed.cc", "111movies.net", "embed.su", "google.com", "cloudflare.com"
-                                        )
-                                        val isAllowed = allowedHosts.any { url.contains(it) }
-                                        return if (isAllowed) false else true // block unauthorized popups!
-                                    }
-                                }
-
-                                loadUrl(selectedServer!!.embedUrl)
                             }
                         },
                         update = { webView ->
@@ -210,121 +192,372 @@ fun PlayerScreen(
                     )
                 }
 
-                // If fullscreen custom view is active
-                if (customView != null) {
+                // Fullscreen HTML5 Video View if triggered inside WebChromeClient
+                customView?.let { cv ->
                     AndroidView(
                         factory = {
                             FrameLayout(context).apply {
-                                addView(customView)
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                (cv.parent as? ViewGroup)?.removeView(cv)
+                                addView(cv)
                             }
                         },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-            }
 
-            // Controls & Server Switcher (Visible in Portrait mode)
-            if (!isLandscape && customView == null) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(0.45f)
-                        .background(DarkBg)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                // Floating Overlay in Landscape
+                AnimatedVisibility(
+                    visible = showControlsOverlay,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .padding(16.dp)
                     ) {
-                        Text(
-                            text = "Streaming Signals & Servers",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
+                        // Top Bar: Back, Title, Server Chips & Rotate Toggle
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.TopCenter),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                    },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                                }
 
-                        IconButton(onClick = toggleOrientation) {
-                            Icon(Icons.Default.Fullscreen, contentDescription = "Fullscreen", tint = SakuraPink)
+                                Column {
+                                    Text(
+                                        text = title,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        maxLines = 1
+                                    )
+                                    if (isTv) {
+                                        Text(
+                                            text = "Season $season • Episode $episode",
+                                            color = SakuraPink,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Server switcher quick chip
+                                servers.take(4).forEach { s ->
+                                    FilterChip(
+                                        selected = selectedServer?.serverKey == s.serverKey,
+                                        onClick = { selectedServer = s },
+                                        label = { Text(s.name.substringBefore(" ("), fontSize = 11.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = SakuraPink,
+                                            selectedLabelColor = Color.White,
+                                            containerColor = Color.Black.copy(alpha = 0.6f),
+                                            labelColor = Color.White
+                                        )
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = toggleOrientation,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.ScreenRotation, contentDescription = "Exit Landscape", tint = Color.White)
+                                }
+                            }
                         }
                     }
-
-                    Text(
-                        text = "If playback buffers or doesn't start, switch to another signal below:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextMuted
+                }
+            }
+        } else {
+            // Portrait Layout: Top Bar + 16:9 Video Player + Controls
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    maxLines = 1
+                                )
+                                if (isTv) {
+                                    Text(
+                                        text = "Season $season • Episode $episode",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SakuraLight
+                                    )
+                                }
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = {
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                onNavigateBack()
+                            }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = toggleOrientation) {
+                                Icon(Icons.Default.Fullscreen, contentDescription = "Fullscreen", tint = SakuraPink)
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
                     )
-
-                    // Server selection pills
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                },
+                containerColor = DarkBg
+            ) { padding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    // Video Player Box (16:9 Aspect Ratio)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f)
+                            .background(Color.Black)
                     ) {
-                        items(servers) { server ->
-                            FilterChip(
-                                selected = selectedServer?.serverKey == server.serverKey,
-                                onClick = { selectedServer = server },
-                                label = {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(server.name)
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = if (server.isHindiDubAvailable) NeonCyan.copy(alpha = 0.2f) else SakuraPink.copy(alpha = 0.2f)
-                                        ) {
-                                            Text(
-                                                text = server.badge,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (server.isHindiDubAvailable) NeonCyan else SakuraPink,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                            )
+                        if (selectedServer != null) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    WebView(ctx).apply {
+                                        layoutParams = ViewGroup.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
+                                        configureVideoWebView(this, selectedServer!!.embedUrl) { v, cb ->
+                                            customView = v
+                                            customViewCallback = cb
                                         }
                                     }
                                 },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = DarkSurfaceVariant,
-                                    selectedLabelColor = TextPrimary,
-                                    containerColor = DarkCard,
-                                    labelColor = TextSecondary
-                                )
+                                update = { webView ->
+                                    selectedServer?.let { server ->
+                                        if (webView.url != server.embedUrl) {
+                                            webView.loadUrl(server.embedUrl)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        // Fullscreen button overlay on player
+                        IconButton(
+                            onClick = toggleOrientation,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                                .size(36.dp)
+                                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fullscreen,
+                                contentDescription = "Fullscreen",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Card(
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = DarkCard),
-                        border = CardDefaults.outlinedCardBorder()
+                    // Content & Server Switcher
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGreen)
-                            Column {
-                                Text(
-                                    text = "Active: ${selectedServer?.name ?: "Signal 1"}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
+                            Text(
+                                text = "Select Streaming Server",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+
+                            Button(
+                                onClick = toggleOrientation,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = SakuraPink),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.ScreenRotation, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Landscape", fontSize = 12.sp)
+                            }
+                        }
+
+                        Text(
+                            text = "If video buffers, switch to any backup server below:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
+
+                        // Server Chips Carousel
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(servers) { server ->
+                                FilterChip(
+                                    selected = selectedServer?.serverKey == server.serverKey,
+                                    onClick = { selectedServer = server },
+                                    label = {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(server.name)
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = if (server.isHindiDubAvailable) NeonCyan.copy(alpha = 0.2f) else SakuraPink.copy(alpha = 0.2f)
+                                            ) {
+                                                Text(
+                                                    text = server.badge,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (server.isHindiDubAvailable) NeonCyan else SakuraPink,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = DarkSurfaceVariant,
+                                        selectedLabelColor = TextPrimary,
+                                        containerColor = DarkCard,
+                                        labelColor = TextSecondary
+                                    )
                                 )
-                                Text(
-                                    text = "Built-in Ad-Shield & Popup Protector active",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextMuted
-                                )
+                            }
+                        }
+
+                        // Shield Info Card
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = DarkCard),
+                            border = CardDefaults.outlinedCardBorder()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGreen)
+                                Column {
+                                    Text(
+                                        text = "Active Server: ${selectedServer?.name ?: "Primary Server"}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "Ad-Shield active • Rotate phone anytime for immersive fullscreen",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextMuted
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+private fun configureVideoWebView(
+    webView: WebView,
+    initialUrl: String,
+    onCustomViewShow: (View, WebChromeClient.CustomViewCallback) -> Unit
+) {
+    webView.apply {
+        setBackgroundColor(android.graphics.Color.BLACK)
+
+        settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            mediaPlaybackRequiresUserGesture = false
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            allowFileAccess = true
+            allowContentAccess = true
+            setSupportMultipleWindows(false)
+            javaScriptCanOpenWindowsAutomatically = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+        }
+
+        webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (view != null && callback != null) {
+                    onCustomViewShow(view, callback)
+                }
+            }
+
+            override fun onHideCustomView() {}
+        }
+
+        webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val url = request?.url?.toString() ?: return false
+                // Block external app intent redirects (e.g. market, intent, whatsapp)
+                val isExternalAppScheme = url.startsWith("intent://") ||
+                        url.startsWith("market://") ||
+                        url.startsWith("whatsapp://") ||
+                        url.startsWith("tg://") ||
+                        url.startsWith("vnd.youtube:")
+
+                if (isExternalAppScheme) {
+                    return true // block unwanted app switches
+                }
+
+                // Allow all embedded web stream traffic inside player
+                return false
+            }
+        }
+
+        loadUrl(initialUrl)
     }
 }

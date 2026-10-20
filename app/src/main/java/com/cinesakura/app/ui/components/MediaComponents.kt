@@ -46,13 +46,25 @@ fun MediaCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(cardHeight.dp)
+                    .background(DarkSurfaceVariant),
+                contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = item.poster.ifEmpty { item.banner },
-                    contentDescription = item.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                Icon(
+                    imageVector = Icons.Default.Movie,
+                    contentDescription = null,
+                    tint = SakuraPink.copy(alpha = 0.3f),
+                    modifier = Modifier.size(36.dp)
                 )
+
+                val imageModel = item.poster.ifEmpty { item.banner ?: "" }
+                if (imageModel.isNotEmpty()) {
+                    AsyncImage(
+                        model = imageModel,
+                        contentDescription = item.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
 
                 // Top badging: Type / Year
                 Row(
