@@ -22,24 +22,34 @@
 
 ## 📲 Download APK Directly
 
-Download the ready-to-install Android APK directly from GitHub Releases:
+Download the ready-to-install Android APK directly with a single click:
 
 <p align="center">
-  <a href="https://github.com/d4rxh/Cine-sakura/releases/latest">
-    <img src="https://img.shields.io/badge/Download-Latest%20Release%20APK-ff2d55?style=for-the-badge&logo=googleplay&logoColor=white" height="48" alt="Download Latest Release APK" />
+  <a href="https://github.com/d4rxh/Cine-sakura/releases/download/v1.0.3/CineSakura-Release.apk">
+    <img src="https://img.shields.io/badge/Direct%20Download-Release%20APK%20(Signed)-ff2d55?style=for-the-badge&logo=android&logoColor=white" height="48" alt="Download Release APK" />
   </a>
   &nbsp;&nbsp;
-  <a href="https://github.com/d4rxh/Cine-sakura/releases/download/v1.0.2/app-debug.apk">
-    <img src="https://img.shields.io/badge/Direct%20APK-Debug%20Build-4a148c?style=for-the-badge&logo=android&logoColor=white" height="48" alt="Direct APK Debug" />
+  <a href="https://github.com/d4rxh/Cine-sakura/releases/download/v1.0.3/CineSakura-Debug.apk">
+    <img src="https://img.shields.io/badge/Direct%20Download-Debug%20APK-4a148c?style=for-the-badge&logo=android&logoColor=white" height="48" alt="Direct APK Debug" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/d4rxh/Cine-sakura/releases/latest">
+    <img src="https://img.shields.io/badge/All%20Releases-GitHub%20Page-1f2937?style=for-the-badge&logo=github&logoColor=white" height="48" alt="GitHub Releases Page" />
   </a>
 </p>
 
+| APK Variant | Download Link | Description |
+|:---|:---|:---|
+| **CineSakura Release (Signed)** | [📥 CineSakura-Release.apk](https://github.com/d4rxh/Cine-sakura/releases/download/v1.0.3/CineSakura-Release.apk) | Optimized, signed, and ready to install on all Android devices. |
+| **CineSakura Debug** | [📥 CineSakura-Debug.apk](https://github.com/d4rxh/Cine-sakura/releases/download/v1.0.3/CineSakura-Debug.apk) | Debug build with developer logging enabled. |
+| **app-debug.apk (Mirror)** | [📥 app-debug.apk](https://github.com/d4rxh/Cine-sakura/releases/download/v1.0.3/app-debug.apk) | Direct fallback mirror link. |
+
 > [!TIP]
 > **How to install on Android:**
-> 1. Tap **Download Latest Release APK** above on your Android phone.
-> 2. Open the downloaded `.apk` file.
-> 3. If prompted, allow *"Install unknown apps"* for your browser or file manager.
-> 4. Tap **Install** and enjoy watching!
+> 1. Tap **Direct Download Release APK** above from your phone's browser (Chrome / Brave / Firefox).
+> 2. Once downloaded, tap the notification or open your **Downloads** folder.
+> 3. If prompted with *"For your security, your phone is not allowed to install unknown apps from this source"*, tap **Settings** and toggle **Allow from this source**.
+> 4. Tap **Install** and launch Cine-Sakura!
 
 ---
 
