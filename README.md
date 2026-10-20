@@ -29,7 +29,7 @@ Download the ready-to-install Android APK directly from GitHub Releases:
     <img src="https://img.shields.io/badge/Download-Latest%20Release%20APK-ff2d55?style=for-the-badge&logo=googleplay&logoColor=white" height="48" alt="Download Latest Release APK" />
   </a>
   &nbsp;&nbsp;
-  <a href="https://github.com/d4rxh/Cine-sakura/releases/download/v1.0.0/app-debug.apk">
+  <a href="https://github.com/d4rxh/Cine-sakura/releases/download/v1.0.1/app-debug.apk">
     <img src="https://img.shields.io/badge/Direct%20APK-Debug%20Build-4a148c?style=for-the-badge&logo=android&logoColor=white" height="48" alt="Direct APK Debug" />
   </a>
 </p>
